@@ -1,3 +1,4 @@
+import * as sinon from 'sinon';
 import * as aws from "aws-sdk";
 import * as AWS from "aws-sdk-mock";
 import chai = require("chai");
@@ -6,6 +7,7 @@ import "mocha";
 import DomainInfo = require("../../DomainInfo");
 import ServerlessCustomDomain = require("../../index");
 import { ServerlessInstance, ServerlessOptions } from "../../types";
+import { throwError } from 'rxjs';
 
 const expect = chai.expect;
 chai.use(spies);
@@ -479,6 +481,35 @@ describe("Custom Domain Plugin", () => {
       expect(result).to.equal("test_rest_api_id");
     });
 
+    it("Fetches restApiId correctly trying split stack", async () => {
+      const stubService = sinon.stub();
+      AWS.mock("CloudFormation", "describeStackResource", (params, callback) => {
+        callback(null, stubService());
+      });
+      stubService.onCall(0).throws();
+      stubService.onCall(1).returns({
+        StackResourceDetail:
+          {
+            PhysicalResourceId: "host/test_rest_api_id/id",
+          },
+      });
+      stubService.onCall(2).returns({
+        StackResourceDetail:
+          {
+            LogicalResourceId: "ApiGatewayRestApi",
+            PhysicalResourceId: "test_rest_api_id",
+          },
+      });
+      const plugin = constructPlugin({
+        basePath: "test_basepath",
+        domainName: "test_domain",
+      });
+      plugin.cloudformation = new aws.CloudFormation();
+
+      const result = await plugin.getRestApiId();
+      expect(result).to.equal("test_rest_api_id");
+    });
+
     it("serverless.yml defines explicitly the apiGateway", async () => {
       AWS.mock("CloudFormation", "describeStackResource", (params, callback) => {
         callback(null, {
@@ -502,6 +533,7 @@ describe("Custom Domain Plugin", () => {
     });
 
     afterEach(() => {
+      AWS.restore('CloudFormation', 'describeStackResource');
       consoleOutput = [];
     });
   });
