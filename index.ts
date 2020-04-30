@@ -574,11 +574,28 @@ class ServerlessCustomDomain {
         };
 
         let response;
+        let tryApiNestedStack = false;
         try {
             response = await this.cloudformation.describeStackResource(params).promise();
         } catch (err) {
             this.logIfDebug(err);
-            throw new Error(`Error: Failed to find CloudFormation resources for ${this.givenDomainName}\n`);
+            tryApiNestedStack = true;
+        }
+        if (tryApiNestedStack) {
+            const apiNestedStackParams = {
+                LogicalResourceId: "APINestedStack",
+                StackName: stackName,
+            }
+            try {
+                const apiNestedStackResponse = await this.cloudformation.describeStackResource(apiNestedStackParams).promise();
+                const physicalResourceIdParts = apiNestedStackResponse.StackResourceDetail.PhysicalResourceId.split('/');
+                const apiNestedStackName = physicalResourceIdParts[1];
+                params.StackName = apiNestedStackName;
+                response = await this.cloudformation.describeStackResource(params).promise();
+            } catch (err) {
+                this.logIfDebug(err);
+                throw new Error(`Error: Failed to find CloudFormation resources for ${this.givenDomainName}\n`);
+            }
         }
         const restApiId = response.StackResourceDetail.PhysicalResourceId;
         if (!restApiId) {
